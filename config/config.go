@@ -28,6 +28,7 @@ type ListenerConfig struct {
 	BrokerAddress     string
 	ListenerAddress   string
 	AdvertisedAddress string
+	Listener          net.Listener
 }
 type DialAddressMapping struct {
 	SourceAddress      string

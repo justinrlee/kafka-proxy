@@ -11,6 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Creates a listener from a listener config
 type ListenFunc func(cfg config.ListenerConfig) (l net.Listener, err error)
 
 type Listeners struct {
@@ -29,8 +30,10 @@ type Listeners struct {
 	disableDynamicListeners  bool
 	dynamicSequentialMinPort int
 
-	brokerToListenerConfig map[string]config.ListenerConfig
-	lock                   sync.RWMutex
+	// upsteam (backend) to local listener mapping
+	brokerToListenerConfig   map[string]config.ListenerConfig
+	brokerIdToListenerConfig map[int32]config.ListenerConfig
+	lock                     sync.RWMutex
 }
 
 func NewListeners(cfg *config.Config) (*Listeners, error) {
@@ -65,11 +68,14 @@ func NewListeners(cfg *config.Config) (*Listeners, error) {
 		return nil, err
 	}
 
+	brokerIdToListenerConfig := make(map[int32]config.ListenerConfig)
+
 	return &Listeners{
 		defaultListenerIP:         defaultListenerIP,
 		dynamicAdvertisedListener: dynamicAdvertisedListener,
 		connSrc:                   make(chan Conn, 1),
 		brokerToListenerConfig:    brokerToListenerConfig,
+		brokerIdToListenerConfig:  brokerIdToListenerConfig,
 		tcpConnOptions:            tcpConnOptions,
 		listenFunc:                listenFunc,
 		deterministicListeners:    cfg.Proxy.DeterministicListeners,
@@ -119,23 +125,98 @@ func getBrokerToListenerConfig(cfg *config.Config) (map[string]config.ListenerCo
 	return brokerToListenerConfig, nil
 }
 
+// func getIdtoListenerConfig(cfg *config.Config)
+
+// netAddressMappingFunc
 func (p *Listeners) GetNetAddressMapping(brokerHost string, brokerPort int32, brokerId int32) (listenerHost string, listenerPort int32, err error) {
+	fmt.Println("called GetNetAddressMapping")
+	fmt.Println("brokerId:" + fmt.Sprint(brokerId))
+
 	if brokerHost == "" || brokerPort <= 0 {
 		return "", 0, fmt.Errorf("broker address '%s:%d' is invalid", brokerHost, brokerPort)
 	}
 
 	brokerAddress := net.JoinHostPort(brokerHost, fmt.Sprint(brokerPort))
 
+	// old behavior: take upstream from metadata, look up mapping (maps upstream to local listener, including advertised)
+	// if mapping exists, continue
+	// if mapping doesn't exist, create new listener (and add to mapping)
+
+	// fmt.Println("Lookup using net.JoinHostPort")
+	// fmt.Println(brokerPort)
+	// fmt.Println(brokerAddress)
+
+	// var listenerConfig config.ListenerConfig
+
+	// Scenarios:
+	// look up by broker id -> get listenerConfig
+	// 	look up by upstream listener -> get listenerConfig
+	// if brokerId found, and two listenerconfigs match, do nothing
+	// if brokerId found, and listenerConfigs don't match
+
+	// //////////////
+	// Logic:
+	// * if deterministic:
+	// * look up by broker ID
+	// * if broker ID found, and same, do nothing
+	// * If broker id found, and not same, delete, start new listener
+	// * if broker id not found
+	// * start new listebrokerAddress
+	// * otherwise, if not deterministic, follow old logic
+	// //////////////
+	// if using deterministic listeners, first look up by broker id
+	// if p.deterministicListeners {
+	// 	listenerConfig, brokerFound
+	// }
+	// if !p.disableDynamicListeners
+	// idListenerConfig, brokerIdFound := p.brokerIdToListenerConfig[brokerId]
+
+	// focus on readability vs. DRY
+
+	// thesis: right now we're looking at dropping existing listeners and starting new ones
+	// we probably don't actually want to stop the listener; we just want to redirect
+	// need to figure out where the upstreams are held
+
+	// if p.deterministicListeners {
+	// 	p.lock.RLock()
+	// 	// listenerConfig, found := p.brokerIdToListenerConfig[brokerId]
+	// 	p.lock.RUnlock()
+
+	// type ListenerConfig struct {
+	// 	BrokerAddress     string
+	// 	ListenerAddress   string
+	// 	AdvertisedAddress string
+	// 	Listener          net.Listener
+	// }
+
+	// 	// LC looks like this
+	// 	// upstream local advertised
+	// ip-10-32-1-28.ap-southeast-1.compute.internal:20040 ->
+	// 	// {ip-10-32-1-28.ap-southeast-1.compute.internal:20040 0.0.0.0:40030 ip-10-32-1-28.ap-southeast-1.compute.internal:40030 0xc000129ac0}
+	// 	// if found {
+	// 	// 	if upstream matches
+	// 	// 	if upstream doesn't match
+	// 	// } else {
+	// 	// start new listener
+	// 	// }
+
+	// }
 	p.lock.RLock()
 	listenerConfig, ok := p.brokerToListenerConfig[brokerAddress]
 	p.lock.RUnlock()
 
+	fmt.Println(brokerAddress)
+	fmt.Println("maps to")
+	fmt.Println(listenerConfig)
+	fmt.Println(ok)
+
 	if ok {
-		logrus.Debugf("Address mappings broker=%s, listener=%s, advertised=%s", listenerConfig.BrokerAddress, listenerConfig.ListenerAddress, listenerConfig.AdvertisedAddress)
+		logrus.Infof("Address mappings broker=%s, listener=%s, advertised=%s", listenerConfig.BrokerAddress, listenerConfig.ListenerAddress, listenerConfig.AdvertisedAddress)
 		return util.SplitHostPort(listenerConfig.AdvertisedAddress)
 	}
 	if !p.disableDynamicListeners {
 		logrus.Infof("Starting dynamic listener for broker %s", brokerAddress)
+		// ListenDynamicInstance also starts the listener
 		return p.ListenDynamicInstance(brokerAddress, brokerId)
 	}
 	return "", 0, fmt.Errorf("net address mapping for %s:%d was not found", brokerHost, brokerPort)
@@ -152,7 +233,7 @@ func (p *Listeners) ListenDynamicInstance(brokerAddress string, brokerId int32) 
 	var defaultListenerAddress string
 
 	if p.deterministicListeners {
-		defaultListenerAddress = net.JoinHostPort(p.defaultListenerIP, fmt.Sprint(p.dynamicSequentialMinPort + int(brokerId)))
+		defaultListenerAddress = net.JoinHostPort(p.defaultListenerIP, fmt.Sprint(p.dynamicSequentialMinPort+int(brokerId)))
 	} else {
 		defaultListenerAddress = net.JoinHostPort(p.defaultListenerIP, fmt.Sprint(p.dynamicSequentialMinPort))
 		if p.dynamicSequentialMinPort != 0 {
@@ -161,11 +242,12 @@ func (p *Listeners) ListenDynamicInstance(brokerAddress string, brokerId int32) 
 	}
 
 	cfg := config.ListenerConfig{ListenerAddress: defaultListenerAddress, BrokerAddress: brokerAddress}
-	l, err := listenInstance(p.connSrc, cfg, p.tcpConnOptions, p.listenFunc)
+	// This is where the actual 'listen' happen
+	listener, err := listenInstance(p.connSrc, cfg, p.tcpConnOptions, p.listenFunc)
 	if err != nil {
 		return "", 0, err
 	}
-	port := l.Addr().(*net.TCPAddr).Port
+	port := listener.Addr().(*net.TCPAddr).Port
 	address := net.JoinHostPort(p.defaultListenerIP, fmt.Sprint(port))
 
 	dynamicAdvertisedListener := p.dynamicAdvertisedListener
@@ -174,7 +256,9 @@ func (p *Listeners) ListenDynamicInstance(brokerAddress string, brokerId int32) 
 	}
 
 	advertisedAddress := net.JoinHostPort(dynamicAdvertisedListener, fmt.Sprint(port))
-	p.brokerToListenerConfig[brokerAddress] = config.ListenerConfig{BrokerAddress: brokerAddress, ListenerAddress: address, AdvertisedAddress: advertisedAddress}
+	p.brokerToListenerConfig[brokerAddress] = config.ListenerConfig{BrokerAddress: brokerAddress, ListenerAddress: address, AdvertisedAddress: advertisedAddress, Listener: listener}
+	p.brokerIdToListenerConfig[brokerId] = p.brokerToListenerConfig[brokerAddress]
+	fmt.Println(p.brokerToListenerConfig[brokerAddress])
 
 	logrus.Infof("Dynamic listener %s for broker %s advertised as %s", address, brokerAddress, advertisedAddress)
 
@@ -195,6 +279,7 @@ func (p *Listeners) ListenInstances(cfgs []config.ListenerConfig) (<-chan Conn, 
 	return p.connSrc, nil
 }
 
+// listenFunc is just net.listen or tls.listen (with tls config)
 func listenInstance(dst chan<- Conn, cfg config.ListenerConfig, opts TCPConnOptions, listenFunc ListenFunc) (net.Listener, error) {
 	l, err := listenFunc(cfg)
 	if err != nil {
