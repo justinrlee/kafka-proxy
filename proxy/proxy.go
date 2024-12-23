@@ -25,6 +25,7 @@ type Listeners struct {
 
 	listenFunc ListenFunc
 
+	deterministicListeners   bool
 	disableDynamicListeners  bool
 	dynamicSequentialMinPort int
 
@@ -71,6 +72,7 @@ func NewListeners(cfg *config.Config) (*Listeners, error) {
 		brokerToListenerConfig:    brokerToListenerConfig,
 		tcpConnOptions:            tcpConnOptions,
 		listenFunc:                listenFunc,
+		deterministicListeners:    cfg.Proxy.DeterministicListeners,
 		disableDynamicListeners:   cfg.Proxy.DisableDynamicListeners,
 		dynamicSequentialMinPort:  cfg.Proxy.DynamicSequentialMinPort,
 	}, nil
@@ -117,7 +119,7 @@ func getBrokerToListenerConfig(cfg *config.Config) (map[string]config.ListenerCo
 	return brokerToListenerConfig, nil
 }
 
-func (p *Listeners) GetNetAddressMapping(brokerHost string, brokerPort int32) (listenerHost string, listenerPort int32, err error) {
+func (p *Listeners) GetNetAddressMapping(brokerHost string, brokerPort int32, brokerId int32) (listenerHost string, listenerPort int32, err error) {
 	if brokerHost == "" || brokerPort <= 0 {
 		return "", 0, fmt.Errorf("broker address '%s:%d' is invalid", brokerHost, brokerPort)
 	}
@@ -134,12 +136,12 @@ func (p *Listeners) GetNetAddressMapping(brokerHost string, brokerPort int32) (l
 	}
 	if !p.disableDynamicListeners {
 		logrus.Infof("Starting dynamic listener for broker %s", brokerAddress)
-		return p.ListenDynamicInstance(brokerAddress)
+		return p.ListenDynamicInstance(brokerAddress, brokerId)
 	}
 	return "", 0, fmt.Errorf("net address mapping for %s:%d was not found", brokerHost, brokerPort)
 }
 
-func (p *Listeners) ListenDynamicInstance(brokerAddress string) (string, int32, error) {
+func (p *Listeners) ListenDynamicInstance(brokerAddress string, brokerId int32) (string, int32, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	// double check
@@ -147,9 +149,15 @@ func (p *Listeners) ListenDynamicInstance(brokerAddress string) (string, int32, 
 		return util.SplitHostPort(v.AdvertisedAddress)
 	}
 
-	defaultListenerAddress := net.JoinHostPort(p.defaultListenerIP, fmt.Sprint(p.dynamicSequentialMinPort))
-	if p.dynamicSequentialMinPort != 0 {
-		p.dynamicSequentialMinPort += 1
+	var defaultListenerAddress string
+
+	if p.deterministicListeners {
+		defaultListenerAddress = net.JoinHostPort(p.defaultListenerIP, fmt.Sprint(p.dynamicSequentialMinPort + int(brokerId)))
+	} else {
+		defaultListenerAddress = net.JoinHostPort(p.defaultListenerIP, fmt.Sprint(p.dynamicSequentialMinPort))
+		if p.dynamicSequentialMinPort != 0 {
+			p.dynamicSequentialMinPort += 1
+		}
 	}
 
 	cfg := config.ListenerConfig{ListenerAddress: defaultListenerAddress, BrokerAddress: brokerAddress}
