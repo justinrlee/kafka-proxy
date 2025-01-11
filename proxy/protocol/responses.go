@@ -10,11 +10,13 @@ import (
 const (
 	apiKeyMetadata        = 3
 	apiKeyFindCoordinator = 10
+	apiVersions           = 18
 
 	brokersKeyName = "brokers"
 	hostKeyName    = "host"
 	portKeyName    = "port"
 	nodeKeyName    = "node_id"
+	apiKeysKeyname = "api_keys"
 
 	coordinatorKeyName  = "coordinator"
 	coordinatorsKeyName = "coordinators"
@@ -23,6 +25,7 @@ const (
 var (
 	metadataResponseSchemaVersions        = createMetadataResponseSchemaVersions()
 	findCoordinatorResponseSchemaVersions = createFindCoordinatorResponseSchemaVersions()
+	apiVersionsResponseSchemaVersions     = createApiVersionsResponseSchemaVersions()
 )
 
 func createMetadataResponseSchemaVersions() []Schema {
@@ -323,6 +326,27 @@ func createFindCoordinatorResponseSchemaVersions() []Schema {
 	findCoordinatorResponseV6 := findCoordinatorResponseV5
 
 	return []Schema{findCoordinatorResponseV0, findCoordinatorResponseV1, findCoordinatorResponseV2, findCoordinatorResponseV3, findCoordinatorResponseV4, findCoordinatorResponseV5, findCoordinatorResponseV6}
+}
+
+func createApiVersionsResponseSchemaVersions() []Schema {
+	apiVersionKeyV0 := NewSchema("api_versions_key_v0",
+		&Mfield{Name: "api_key", Ty: TypeInt16},
+		&Mfield{Name: "min_version", Ty: TypeInt16},
+		&Mfield{Name: "max_version", Ty: TypeInt16},
+	)
+
+	apiVersionsResponseV0 := NewSchema("api_versions_response_v0",
+		&Mfield{Name: "error_code", Ty: TypeInt16},
+		&Array{Name: apiKeysKeyname, Ty: apiVersionKeyV0},
+	)
+	apiVersionsResponseV1 := NewSchema("api_versions_response_v0",
+		&Mfield{Name: "error_code", Ty: TypeInt16},
+		&Array{Name: apiKeysKeyname, Ty: apiVersionKeyV0},
+		&Mfield{Name: "throttle_time_ms", Ty: TypeInt32},
+	)
+	apiVersionsResponseV2 := NewSchema()
+	apiVersionsResponseV3 := NewSchema()
+	apiVersionsResponseV4 := NewSchema()
 }
 
 func modifyMetadataResponse(decodedStruct *Struct, fn config.NetAddressMappingFunc) error {
