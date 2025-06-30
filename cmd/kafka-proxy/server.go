@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/grepplabs/kafka-proxy/pkg/apis"
+	localscram "github.com/grepplabs/kafka-proxy/plugin/local-auth-scram/shared"
 	localauth "github.com/grepplabs/kafka-proxy/plugin/local-auth/shared"
 	tokeninfo "github.com/grepplabs/kafka-proxy/plugin/token-info/shared"
 	tokenprovider "github.com/grepplabs/kafka-proxy/plugin/token-provider/shared"
@@ -119,7 +120,7 @@ func initFlags() {
 	// local authentication plugin
 	Server.Flags().BoolVar(&c.Auth.Local.Enable, "auth-local-enable", false, "Enable local SASL/PLAIN authentication performed by listener - SASL handshake will not be passed to kafka brokers")
 	Server.Flags().StringVar(&c.Auth.Local.Command, "auth-local-command", "", "Path to authentication plugin binary")
-	Server.Flags().StringVar(&c.Auth.Local.Mechanism, "auth-local-mechanism", "PLAIN", "SASL mechanism used for local authentication: PLAIN or OAUTHBEARER")
+	Server.Flags().StringVar(&c.Auth.Local.Mechanism, "auth-local-mechanism", "PLAIN", "SASL mechanism used for local authentication: PLAIN or SCRAM or OAUTHBEARER")
 	Server.Flags().StringArrayVar(&c.Auth.Local.Parameters, "auth-local-param", []string{}, "Authentication plugin parameter")
 	Server.Flags().StringVar(&c.Auth.Local.LogLevel, "auth-local-log-level", "trace", "Log level of the auth plugin")
 	Server.Flags().DurationVar(&c.Auth.Local.Timeout, "auth-local-timeout", 10*time.Second, "Authentication timeout")
@@ -228,6 +229,7 @@ func Run(_ *cobra.Command, _ []string) {
 	logrus.Infof("Starting kafka-proxy version %s on platform %s/%s", config.Version, runtime.GOOS, runtime.GOARCH)
 
 	var localPasswordAuthenticator apis.PasswordAuthenticator
+	var localScramAuthenticator apis.ScramAuthenticator
 	var localTokenAuthenticator apis.TokenInfo
 	if c.Auth.Local.Enable {
 		switch c.Auth.Local.Mechanism {
@@ -255,6 +257,32 @@ func Run(_ *cobra.Command, _ []string) {
 				localPasswordAuthenticator, ok = raw.(apis.PasswordAuthenticator)
 				if !ok {
 					logrus.Fatal(errors.New("unsupported PasswordAuthenticator plugin type"))
+				}
+			}
+		case "SCRAM":
+			var err error
+			factory, ok := registry.GetComponent(new(apis.ScramAuthenticatorFactory), c.Auth.Local.Command).(apis.ScramAuthenticatorFactory)
+			if ok {
+				logrus.Infof("Using built-in '%s' ScramAuthenticator for local ScramAuthenticator", c.Auth.Local.Command)
+				localScramAuthenticator, err = factory.New(c.Auth.Local.Parameters)
+				if err != nil {
+					logrus.Fatal(err)
+				}
+			} else {
+				client := NewPluginClient(localscram.Handshake, localscram.PluginMap, c.Auth.Local.LogLevel, c.Auth.Local.Command, c.Auth.Local.Parameters)
+				defer client.Kill()
+
+				rpcClient, err := client.Client()
+				if err != nil {
+					logrus.Fatal(err)
+				}
+				raw, err := rpcClient.Dispense("scramAuthenticator")
+				if err != nil {
+					logrus.Fatal(err)
+				}
+				localScramAuthenticator, ok = raw.(apis.ScramAuthenticator)
+				if !ok {
+					logrus.Fatal(errors.New("unsupported ScramAuthenticator plugin type"))
 				}
 			}
 		case "OAUTHBEARER":
@@ -396,7 +424,7 @@ func Run(_ *cobra.Command, _ []string) {
 		if err != nil {
 			logrus.Fatal(err)
 		}
-		proxyClient, err := proxy.NewClient(connset, c, listeners.GetNetAddressMapping, localPasswordAuthenticator, localTokenAuthenticator, saslTokenProvider, gatewayTokenProvider, gatewayTokenInfo)
+		proxyClient, err := proxy.NewClient(connset, c, listeners.GetNetAddressMapping, localPasswordAuthenticator, localTokenAuthenticator, localScramAuthenticator, saslTokenProvider, gatewayTokenProvider, gatewayTokenInfo)
 		if err != nil {
 			logrus.Fatal(err)
 		}

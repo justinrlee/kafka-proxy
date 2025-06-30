@@ -44,7 +44,7 @@ type Client struct {
 	kafkaClientCert *x509.Certificate
 }
 
-func NewClient(conns *ConnSet, c *config.Config, netAddressMappingFunc config.NetAddressMappingFunc, localPasswordAuthenticator apis.PasswordAuthenticator, localTokenAuthenticator apis.TokenInfo, saslTokenProvider apis.TokenProvider, gatewayTokenProvider apis.TokenProvider, gatewayTokenInfo apis.TokenInfo) (*Client, error) {
+func NewClient(conns *ConnSet, c *config.Config, netAddressMappingFunc config.NetAddressMappingFunc, localPasswordAuthenticator apis.PasswordAuthenticator, localTokenAuthenticator apis.TokenInfo, localScramAuthenticator apis.ScramAuthenticator, saslTokenProvider apis.TokenProvider, gatewayTokenProvider apis.TokenProvider, gatewayTokenInfo apis.TokenInfo) (*Client, error) {
 	var (
 		kafkaClientCert *x509.Certificate
 		tlsConfigFunc   TLSConfigFunc
@@ -79,7 +79,7 @@ func NewClient(conns *ConnSet, c *config.Config, netAddressMappingFunc config.Ne
 			forbiddenApiKeys[int16(apiKey)] = struct{}{}
 		}
 	}
-	if c.Auth.Local.Enable && (localPasswordAuthenticator == nil && localTokenAuthenticator == nil) {
+	if c.Auth.Local.Enable && (localPasswordAuthenticator == nil && localTokenAuthenticator == nil && localScramAuthenticator == nil) {
 		return nil, errors.New("Auth.Local.Enable is enabled but passwordAuthenticator and localTokenAuthenticator are nil")
 	}
 
@@ -166,6 +166,7 @@ func NewClient(conns *ConnSet, c *config.Config, netAddressMappingFunc config.Ne
 				timeout:               c.Auth.Local.Timeout,
 				passwordAuthenticator: localPasswordAuthenticator,
 				tokenAuthenticator:    localTokenAuthenticator,
+				scramAuthenticator:    localScramAuthenticator,
 			}),
 			AuthServer: &AuthServer{
 				enabled:   c.Auth.Gateway.Server.Enable,
