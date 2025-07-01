@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/grepplabs/kafka-proxy/pkg/apis"
 	"github.com/grepplabs/kafka-proxy/proxy/protocol"
@@ -48,12 +49,28 @@ func (p *LocalSaslScram) doLocalAuth(saslAuthBytes []byte) (err error) {
 	return fmt.Errorf("SASL SCRAM DO NOT doLocalAuth")
 }
 
+var credentials map[string]string
+var mu sync.Mutex
 func (p *LocalSaslScram) getCredential(username string)(password string, err error) {
-	u, pw, err := p.localAuthenticator.GetCredential("")
-	if u == username {
-		return pw, err
-	} 
-	return "", errors.Errorf("SaslAuthenticate Failed. User '%s' not exist", username)
+	mu.Lock()
+	defer mu.Unlock()
+
+	if credentials == nil {
+		credentials = make(map[string]string)
+	}
+	password, ok := credentials[username]
+	if !ok {
+		u, p, err := p.localAuthenticator.GetCredential("")
+		if err != nil {
+			return "", err
+		}
+		if u != username {
+			return "", errors.Errorf("SaslAuthenticate Failed. User '%s' not exist", username)
+		}
+		password = p
+		credentials[username] = p
+	}
+	return password, err
 }
 
 // implements LocalSaslAuth

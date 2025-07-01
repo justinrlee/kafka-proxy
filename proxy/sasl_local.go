@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/grepplabs/kafka-proxy/pkg/apis"
@@ -372,24 +371,6 @@ func createScramConversation(mechanism string, cl scram.CredentialLookup) (conv 
 	return conv, nil
 }
 
-func getUsername(payload string) (username string, err error) {
-	fields := strings.Split(payload, ",")
-	if len(fields) < 4 {
-		err = errors.New("not enough fields in first server message")
-		return
-	}
-
-	return parseField(fields[2], "n")
-}
-
-func parseField(s, k string) (string, error) {
-	t := strings.TrimPrefix(s, k+"=")
-	if t == s {
-		return "", fmt.Errorf("Error parsing '%s' for field '%s'", s, k)
-	}
-	return t, nil
-}
-
 func (p *LocalSasl) receiveAndSendAuthV0Scram(conn DeadlineReaderWriter, localSaslAuth LocalSaslAuth) (err error) {
 	requestDeadline := time.Now().Add(p.timeout)
 	err = conn.SetDeadline(requestDeadline)
@@ -450,7 +431,6 @@ func (p *LocalSasl) receiveAndSendAuthV1Scram(conn DeadlineReaderWriter, localSa
 			}
 			authBytes = saslAuthReqV0.SaslAuthBytes
 			correlationID = req.CorrelationID
-			break;
 		case 1:
 			saslAuthReqV1 := &protocol.SaslAuthenticateRequestV1{}
 			req := &protocol.Request{Body: saslAuthReqV1}
@@ -459,7 +439,6 @@ func (p *LocalSasl) receiveAndSendAuthV1Scram(conn DeadlineReaderWriter, localSa
 			}
 			authBytes = saslAuthReqV1.SaslAuthBytes
 			correlationID = req.CorrelationID
-			break;
 		case 2:
 			saslAuthReqV2 := &protocol.SaslAuthenticateRequestV2{}
 			req := &protocol.RequestV2{Body: saslAuthReqV2}

@@ -6,12 +6,13 @@ import (
 	"crypto/sha512"
 	"encoding/binary"
 	"fmt"
-	"github.com/grepplabs/kafka-proxy/proxy/protocol"
-	"github.com/sirupsen/logrus"
-	"github.com/xdg-go/scram"
 	"hash"
 	"io"
 	"time"
+
+	"github.com/grepplabs/kafka-proxy/proxy/protocol"
+	"github.com/sirupsen/logrus"
+	"github.com/xdg-go/scram"
 )
 
 // Most of this is a direct copy from Shopify's Sarama found here:
@@ -61,7 +62,7 @@ func (b *SASLSCRAMAuth) sendAndReceiveSASLAuth(conn DeadlineReaderWriter, _ stri
 			return err
 		}
 	} else {
-		return fmt.Errorf("Invalid SCRAM specification provided: %s. Expected one of [\"SCRAM-SHA-256\",\"SCRAM-SHA-512\"]", b.mechanism)
+		return fmt.Errorf("invalid SCRAM specification provided: %s. Expected one of [\"SCRAM-SHA-256\",\"SCRAM-SHA-512\"]", b.mechanism)
 	}
 
 	//if err := scramClient.Begin(b.username, b.password, b.SCRAMAuthzID); err != nil {
