@@ -84,6 +84,9 @@ endif
 protoc.local-auth: dep-check
 	$(PROTOC) -I plugin/local-auth/proto/ plugin/local-auth/proto/auth.proto --go_out=paths=source_relative:plugin/local-auth/proto/ --go-grpc_out=paths=source_relative:plugin/local-auth/proto/
 
+protoc.local-auth-scram: dep-check
+	$(PROTOC) -I plugin/local-auth-scram/proto/ plugin/local-auth-scram/proto/scram.proto --go_out=paths=source_relative:plugin/local-auth-scram/proto/ --go-grpc_out=paths=source_relative:plugin/local-auth-scram/proto/
+
 protoc.token-provider: dep-check
 	$(PROTOC) -I plugin/token-provider/proto/ plugin/token-provider/proto/token-provider.proto --go_out=paths=source_relative:plugin/token-provider/proto/ --go-grpc_out=paths=source_relative:plugin/token-provider/proto/
 
@@ -91,10 +94,13 @@ protoc.token-info: dep-check
 	$(PROTOC) -I plugin/token-info/proto/ plugin/token-info/proto/token-info.proto --go_out=paths=source_relative:plugin/token-info/proto/ --go-grpc_out=paths=source_relative:plugin/token-info/proto/
 
 .PHONY: protoc
-protoc: protoc.local-auth protoc.token-provider protoc.token-info
+protoc: protoc.local-auth protoc.token-provider protoc.token-info protoc.local-auth-scram
 
 plugin.auth-user:
 	CGO_ENABLED=0 go build -o build/auth-user $(BUILD_FLAGS) -ldflags "$(LDFLAGS)" cmd/plugin-auth-user/main.go
+
+plugin.auth-scram:
+	CGO_ENABLED=0 go build -o build/auth-user-scram $(BUILD_FLAGS) -ldflags "$(LDFLAGS)" cmd/plugin-auth-scram/main.go
 
 plugin.auth-ldap:
 	CGO_ENABLED=0 go build -o build/auth-ldap $(BUILD_FLAGS) -ldflags "$(LDFLAGS)" cmd/plugin-auth-ldap/main.go
@@ -114,7 +120,7 @@ plugin.unsecured-jwt-provider:
 plugin.oidc-provider:
 	CGO_ENABLED=0 go build -o build/oidc-provider $(BUILD_FLAGS) -ldflags "$(LDFLAGS)" cmd/plugin-oidc-provider/main.go
 
-all: build plugin.auth-user plugin.auth-ldap plugin.google-id-provider plugin.google-id-info plugin.unsecured-jwt-info plugin.unsecured-jwt-provider plugin.oidc-provider
+all: build plugin.auth-user plugin.auth-ldap plugin.google-id-provider plugin.google-id-info plugin.unsecured-jwt-info plugin.unsecured-jwt-provider plugin.oidc-provider plugin.auth-scram
 
 clean:
 	rm -rf $(ROOT_DIR)/build

@@ -3,10 +3,13 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"github.com/grepplabs/kafka-proxy/pkg/apis"
-	"github.com/grepplabs/kafka-proxy/proxy/protocol"
 	"strconv"
 	"strings"
+	"sync"
+
+	"github.com/grepplabs/kafka-proxy/pkg/apis"
+	"github.com/grepplabs/kafka-proxy/proxy/protocol"
+	"github.com/pkg/errors"
 )
 
 type errLocalAuthFailed struct {
@@ -19,10 +22,14 @@ func (e errLocalAuthFailed) Error() string {
 
 type LocalSaslAuth interface {
 	doLocalAuth(saslAuthBytes []byte) (err error)
+	getCredential(username string)(password string, err error)
 }
 
 type LocalSaslPlain struct {
 	localAuthenticator apis.PasswordAuthenticator
+}
+type LocalSaslScram struct {
+	localAuthenticator apis.ScramAuthenticator
 }
 
 func NewLocalSaslPlain(localAuthenticator apis.PasswordAuthenticator) *LocalSaslPlain {
@@ -31,7 +38,46 @@ func NewLocalSaslPlain(localAuthenticator apis.PasswordAuthenticator) *LocalSasl
 	}
 }
 
+func NewLocalSaslScram(localAuthenticator apis.ScramAuthenticator) *LocalSaslScram {
+	return &LocalSaslScram{
+		localAuthenticator: localAuthenticator,
+	}
+}
+
 // implements LocalSaslAuth
+func (p *LocalSaslScram) doLocalAuth(saslAuthBytes []byte) (err error) {
+	return fmt.Errorf("SASL SCRAM DO NOT doLocalAuth")
+}
+
+var credentials map[string]string
+var mu sync.Mutex
+func (p *LocalSaslScram) getCredential(username string)(password string, err error) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if credentials == nil {
+		credentials = make(map[string]string)
+	}
+	password, ok := credentials[username]
+	if !ok {
+		u, p, err := p.localAuthenticator.GetCredential("")
+		if err != nil {
+			return "", err
+		}
+		if u != username {
+			return "", errors.Errorf("SaslAuthenticate Failed. User '%s' not exist", username)
+		}
+		password = p
+		credentials[username] = p
+	}
+	return password, err
+}
+
+// implements LocalSaslAuth
+func (p *LocalSaslPlain) getCredential(username string)(password string, err error) {
+	return "", nil
+}
+
 func (p *LocalSaslPlain) doLocalAuth(saslAuthBytes []byte) (err error) {
 	tokens := strings.Split(string(saslAuthBytes), "\x00")
 	if len(tokens) != 3 {
@@ -70,6 +116,9 @@ func NewLocalSaslOauth(tokenAuthenticator apis.TokenInfo) *LocalSaslOauth {
 }
 
 // implements LocalSaslAuth
+func (p *LocalSaslOauth) getCredential(username string) ( password string, err error) {
+	return "", nil
+}
 func (p *LocalSaslOauth) doLocalAuth(saslAuthBytes []byte) (err error) {
 	token, _, _, err := p.saslOAuthBearer.GetClientInitialResponse(saslAuthBytes)
 	if err != nil {

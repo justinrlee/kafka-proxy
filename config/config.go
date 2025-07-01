@@ -387,7 +387,7 @@ func (c *Config) Validate() error {
 	if c.Auth.Local.Enable && c.Auth.Local.Command == "" {
 		return errors.New("Command is required when Auth.Local.Enable is enabled")
 	}
-	if c.Auth.Local.Enable && (c.Auth.Local.Mechanism != "PLAIN" && c.Auth.Local.Mechanism != "OAUTHBEARER") {
+	if c.Auth.Local.Enable && (c.Auth.Local.Mechanism != "PLAIN" && c.Auth.Local.Mechanism != "OAUTHBEARER" && c.Auth.Local.Mechanism != "SCRAM") {
 		return errors.New("Mechanism PLAIN or OAUTHBEARER is required when Auth.Local.Enable is enabled")
 	}
 	if c.Auth.Local.Enable && c.Auth.Local.Timeout <= 0 {
